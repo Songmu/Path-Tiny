@@ -11,6 +11,7 @@ our $VERSION = '0.105';
 use Config;
 use Exporter 5.57   (qw/import/);
 use File::Spec 0.86 ();          # shipped with 5.8.1
+use Fcntl ();
 use Carp ();
 
 our @EXPORT    = qw/path/;
@@ -1842,12 +1843,19 @@ sub spew {
     # spewing need to follow the link
     # and create the tempfile in the same dir
     my $resolved_path = $self->_resolve_symlinks;
+    my $orig_perm;
+    if (-f $resolved_path) {
+        $orig_perm = Fcntl::S_IMODE($resolved_path->stat->mode);
+    }
 
     my $temp = path( $resolved_path . $$ . int( rand( 2**31 ) ) );
     my $fh = $temp->filehandle( { exclusive => 1, locked => 1 }, ">", $binmode );
     print {$fh} map { ref eq 'ARRAY' ? @$_ : $_ } @data;
     close $fh or $self->_throw( 'close', $temp->[PATH] );
 
+    if ($orig_perm && Fcntl::S_IMODE($temp->stat->mode) != $orig_perm) {
+        $temp->chmod($orig_perm);
+    }
     return $temp->move($resolved_path);
 }
 
